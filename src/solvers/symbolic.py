@@ -1,42 +1,57 @@
 import sympy
+import re
 from src.core.base_solver import BaseSolver
 
 class SymbolicSolver(BaseSolver):
-    """
-    Решатель для алгебры: уравнения, упрощение выражений.
-    Использует библиотеку SymPy.
-    """
     def get_solver_type(self) -> str:
-        return "SymbolicAlgebra v1.0 (SymPy)"
+        return "SymbolicAlgebra v1.1 (Smart Input)"
 
-    def solve(self, problem: str) -> str:
-        # 1. Подготовка: заменяем ^ на ** (python стиль степени)
+    def _preprocess(self, problem: str) -> str:
+        """
+        Превращает человеческий ввод ('2x', '(x+1)(x-2)') в понятный Python ('2*x', ...).
+        """
+        # 1. Заменяем ^ на **
         problem = problem.replace("^", "**")
         
+        # 2. Вставляем * между числом и буквой (2x -> 2*x)
+        # Ищет цифру, за которой сразу идет буква
+        problem = re.sub(r'(\d)([a-zA-Z])', r'\1*\2', problem)
+        
+        # 3. Вставляем * между числом и скобкой (2(x+1) -> 2*(x+1))
+        problem = re.sub(r'(\d)(\()', r'\1*\2', problem)
+        
+        # 4. Вставляем * между скобкой и буквой ((x+1)x -> (x+1)*x)
+        problem = re.sub(r'(\))([a-zA-Z])', r'\1*\2', problem)
+        
+        # 5. Вставляем * между скобками ((a)(b) -> (a)*(b))
+        problem = re.sub(r'(\))(\()', r'\1*\2', problem)
+        
+        return problem
+
+    def solve(self, problem: str) -> str:
+        clean_problem = self._preprocess(problem)
+        
         try:
-            # 2. Если есть знак "=", это уравнение
-            if "=" in problem:
-                left, right = problem.split("=")
-                # Создаем уравнение: left = right
-                # sympify превращает строку в математический объект
+            if "=" in clean_problem:
+                left, right = clean_problem.split("=")
                 eq = sympy.Eq(sympy.sympify(left), sympy.sympify(right))
-                
-                # Ищем переменную (обычно x, y, z...)
-                # free_symbols находит все буквы в уравнении
                 symbols = list(eq.free_symbols)
                 
                 if not symbols:
-                    return str(sympy.sympify(left) == sympy.sympify(right))
+                    return "Верно" if sympy.sympify(left) == sympy.sympify(right) else "Неверно"
                 
-                # Решаем уравнение
                 solution = sympy.solve(eq, symbols[0])
+                
+                # Красивый вывод
+                if not solution:
+                    return "∅ (Нет решений)"
                 return f"{symbols[0]} = {solution}"
             
             else:
-                # 3. Если нет "=", просто упрощаем выражение (например, "2x + 3x")
-                expr = sympy.sympify(problem)
+                expr = sympy.sympify(clean_problem)
                 result = sympy.simplify(expr)
                 return str(result)
 
         except Exception as e:
-            raise ValueError(f"Ошибка алгебры: {e}")
+            # Если SymPy упал, возвращаем оригинальную ошибку для отладки
+            raise ValueError(f"Не удалось разобрать: {clean_problem}. Ошибка: {e}")
